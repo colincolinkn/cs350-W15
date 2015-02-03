@@ -164,8 +164,17 @@ lock_create(const char *name)
         }
         
         // add stuff here as needed
-        
-        return lock;
+	lock->lk_wchan = wchan_create(lock->lk_name);
+
+	if (lock->lk_wchan == NULL) {
+		kfree(lock->lk_name);
+		kfree(lock);
+		return NULL;
+	}
+	spinlock_init(&lock->lk_lock);
+	lock->held = 0;        
+	lock->lk_thread = NULL;
+	return lock;
 }
 
 void
@@ -174,7 +183,9 @@ lock_destroy(struct lock *lock)
         KASSERT(lock != NULL);
 
         // add stuff here as needed
-        
+	spinlock_cleanup(&lock->lk_lock);
+	wchan_destroy(lock->lk_wchan);        
+       
         kfree(lock->lk_name);
         kfree(lock);
 }
@@ -183,16 +194,36 @@ void
 lock_acquire(struct lock *lock)
 {
         // Write this
-
-        (void)lock;  // suppress warning until code gets written
+	KASSERT(curthread->t_in_interrupt == false);
+	spinlock_acquire(&lock->lk_lock);
+	while (lock->held && !lock_do_i_hold(lock)) {
+		wchan_lock(lock->lk_wchan);
+		spinlock_release(&lock->lk_lock);
+		wchan_sleep(lock->lk_wchan);
+		spinlock_acquire(&lock->lk_lock);
+	}
+	KASSERT(!lock->held || lock_do_i_hold(lock));
+	
+	lock->lk_thread = (struct thread*)curthread;
+	lock->held = 1;
+	spinlock_release(&lock->lk_lock);
+        //(void)lock;  // suppress warning until code gets written
 }
 
 void
 lock_release(struct lock *lock)
 {
         // Write this
-
-        (void)lock;  // suppress warning until code gets written
+	KASSERT(lock != NULL);
+    
+    spinlock_acquire(&lock->lk_lock);
+    lock->held = 0;
+    wchan_wakeone(lock->lk_wchan);
+    
+    spinlock_release(&lock->lk_lock);
+    
+    lock->lk_thread = NULL;
+        //(void)lock;  // suppress warning until code gets written
 }
 
 bool
@@ -200,9 +231,9 @@ lock_do_i_hold(struct lock *lock)
 {
         // Write this
 
-        (void)lock;  // suppress warning until code gets written
+        //(void)lock;  // suppress warning until code gets written
 
-        return true; // dummy until code gets written
+        return lock->lk_thread == (struct thread*)curthread; // dummy until code gets written
 }
 
 ////////////////////////////////////////////////////////////
@@ -217,7 +248,7 @@ cv_create(const char *name)
 
         cv = kmalloc(sizeof(struct cv));
         if (cv == NULL) {
-                return NULL;
+               return NULL;
         }
 
         cv->cv_name = kstrdup(name);
