@@ -21,6 +21,7 @@
  */
 static struct semaphore *globalCatMouseSem;
 
+static struct lock *lk_bowl;
 
 /* 
  * The CatMouse simulation will call this function once before any cat or
@@ -40,6 +41,12 @@ catmouse_sync_init(int bowls)
   if (globalCatMouseSem == NULL) {
     panic("could not create global CatMouse synchronization semaphore");
   }
+	
+  lk_bowl = lock_create("bowlLock");
+  if (lk_bowl == NULL) {
+    panic("could not create bowl lock");
+  }
+
   return;
 }
 
@@ -58,6 +65,8 @@ catmouse_sync_cleanup(int bowls)
   (void)bowls; /* keep the compiler from complaining about unused parameters */
   KASSERT(globalCatMouseSem != NULL);
   sem_destroy(globalCatMouseSem);
+  KASSERT(lk_bowl != NULL);
+  lock_destroy(lk_bowl);
 }
 
 
