@@ -259,7 +259,12 @@ cv_create(const char *name)
         
         // add stuff here as needed
         cv->cv_wchan = wchan_create(cv->cv_name);
-        return cv;
+        if (cv->cv_wchan == NULL) {
+                kfree(cv->cv_name);
+                kfree(cv);
+                return NULL;
+        }
+	return cv;
 }
 
 void
@@ -291,7 +296,7 @@ void
 cv_signal(struct cv *cv, struct lock *lock)
 {	
 	wchan_wakeone(cv->cv_wchan);
-        // Write this
+	// Write this
 	//(void)cv;    // suppress warning until code gets written
 	(void)lock;  // suppress warning until code gets written
 }

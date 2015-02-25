@@ -9,12 +9,56 @@
 #include <thread.h>
 #include <addrspace.h>
 #include <copyinout.h>
-
+#include "opt-A2.h"
+#include <mips/trapframe.h>
   /* this implementation of sys__exit does not do anything with the exit code */
   /* this needs to be fixed to get exit() and waitpid() working properly */
 
-void sys__exit(int exitcode) {
+#if OPT_A2
+int sys_fork(struct trapframe* tf, pid_t *retval) {
+   struct proc *new_proc;
+   new_proc = proc_create_runprogram(curproc->p_name);
+   if (new_proc == NULL) {
+     DEBUG(DB_SYSCALL,"Syscall: fork!!!!!!!%d\n", (int)tf);
+     DEBUG(DB_SYSCALL,"Syscall: fork2!!!!!!!%d\n", *retval);
+   }
 
+   int err;
+   err = as_copy(curproc->p_addrspace, &new_proc->p_addrspace);
+   if (err) {
+    
+      return err;
+   }
+   
+   if (curproc->children == NULL) {
+     panic("invalid children array!");
+   }
+   err = array_add(curproc->children, (int *)new_proc->pid, NULL);
+   if (err) {
+
+      return err;
+   }   
+
+   struct trapframe *tf_cp = NULL;
+
+   tf_cp = kmalloc(sizeof(struct trapframe));
+   if (tf_cp == NULL) {
+      panic("no enough mem");
+   }
+   memcpy(tf_cp, tf, sizeof(struct trapframe));
+   
+   err = thread_fork("child", new_proc, enter_forked_process, tf_cp, 0);
+   if (err) {
+
+      return err;
+   }
+   *retval = new_proc->pid;
+   return 0;
+}
+#else
+#endif /* OPT_A2 */
+
+void sys__exit(int exitcode) {
   struct addrspace *as;
   struct proc *p = curproc;
   /* for now, just include this to keep the compiler from complaining about
@@ -55,7 +99,11 @@ sys_getpid(pid_t *retval)
 {
   /* for now, this is just a stub that always returns a PID of 1 */
   /* you need to fix this to make it work properly */
+  #if OPT_A2
+  *retval = curproc->pid;
+  #else
   *retval = 1;
+  #endif /* OPT_A2 */
   return(0);
 }
 

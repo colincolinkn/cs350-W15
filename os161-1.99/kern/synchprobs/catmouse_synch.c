@@ -21,15 +21,21 @@
  */
 static struct semaphore *globalCatMouseSem;
 
-static struct semaphore *mutex;
-static struct cv *cv_queue;
-static struct lock *lk_bowl;
+static struct cv *cv_queue; /* waiting creatures */
+static struct lock *lk_bowl; /* lock to bowl status */
 
-static int Num_Bowls;
+static int Num_Bowls; /* length of the bowl list */
 
-static volatile int Num_Cat;
-static volatile int Num_Mouse;
-static volatile char *bowl_status;
+static volatile int Num_Cat;  /* num of waiting cats*/
+static volatile int Num_Mouse; /* num of waiting mice*/
+static volatile char *bowl_status; /* status in bowl list */
+/*
+ * index 0: present current status of the whole list. 
+ *          (Cats are eating or Mice are eating)
+ * c: this bowl is occupied by a cat
+ * m: this bowl is occupied by a mouse
+ * -: this bowl is not occupied
+ */
 
 /* 
  * The CatMouse simulation will call this function once before any cat or
@@ -50,11 +56,6 @@ catmouse_sync_init(int bowls)
     panic("could not create global CatMouse synchronization semaphore");
   }
 
-  mutex = sem_create("mutex",1);
-  if (mutex == NULL) {
-    panic("could not create mutex synchronization semaphore");
-  }
-  
   Num_Bowls = bowls;
   int i;
   bowl_status = kmalloc((bowls+1)*sizeof(char));
@@ -92,9 +93,6 @@ catmouse_sync_cleanup(int bowls)
   (void)bowls; /* keep the compiler from complaining about unused parameters */
   KASSERT(globalCatMouseSem != NULL);
   sem_destroy(globalCatMouseSem);
-
-  KASSERT(mutex != NULL);
-  sem_destroy(mutex);
 
   KASSERT(lk_bowl != NULL);
   lock_destroy(lk_bowl);

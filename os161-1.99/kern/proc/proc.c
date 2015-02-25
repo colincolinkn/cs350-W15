@@ -55,10 +55,9 @@
  * The process for the kernel; this holds all the kernel-only threads.
  */
 struct proc *kproc;
-
-/*
- * Mechanism for making the kernel menu thread sleep while processes are running
- */
+#if OPT_A2
+volatile struct proc_combo p_table[PID_MAX];
+#endif
 #ifdef UW
 /* count of the number of processes, excluding kproc */
 static unsigned int proc_count;
@@ -89,7 +88,11 @@ proc_create(const char *name)
 		kfree(proc);
 		return NULL;
 	}
-
+        proc->children = array_create();
+        if (proc->children == NULL) {
+                kfree(proc);
+                return NULL;
+        }
 	threadarray_init(&proc->p_threads);
 	spinlock_init(&proc->p_lock);
 
@@ -198,6 +201,13 @@ proc_bootstrap(void)
     panic("proc_create for kproc failed\n");
   }
 #ifdef UW
+  #if OPT_A2
+  for (int i = 0; i < PID_MAX; i++) {
+    p_table[i].proc = NULL;
+    p_table[i].exit_code = -1;
+    p_table[i].proc_sem = sem_create("proc_cv", 0);
+  }
+  #endif /* OPT_A2 */
   proc_count = 0;
   proc_count_mutex = sem_create("proc_count_mutex",1);
   if (proc_count_mutex == NULL) {
@@ -226,7 +236,22 @@ proc_create_runprogram(const char *name)
 	if (proc == NULL) {
 		return NULL;
 	}
-
+        
+        #if OPT_A2
+        unsigned int p_rd = (unsigned int)random() % PID_MAX;
+        unsigned int p_ct = p_rd;
+	while(1) {
+	    if (p_table[p_ct].proc == NULL && p_table[p_ct].exit_code == -1) {
+		p_table[p_ct].proc = proc;
+                proc->pid = (pid_t)p_ct;
+	    	break;
+	    }
+	    p_ct = (p_ct+1)%PID_MAX;
+            if (p_ct == p_rd) {
+	      panic("reached maximum pid\n");
+            }
+	}       
+        #endif /* OPT_A2 */
 #ifdef UW
 	/* open the console - this should always succeed */
 	console_path = kstrdup("con:");
