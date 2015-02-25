@@ -250,7 +250,8 @@ proc_create_runprogram(const char *name)
             if (p_ct == p_rd) {
 	      panic("reached maximum pid\n");
             }
-	}       
+	} 
+        proc->p_pid = -1;      
         #endif /* OPT_A2 */
 #ifdef UW
 	/* open the console - this should always succeed */

@@ -64,6 +64,7 @@ struct proc {
 	
         /* pid */
         #if OPT_A2
+        int p_pid;
         pid_t pid;
         struct array *children;
         #endif /* OPT_A2 */
@@ -119,4 +120,4 @@ struct addrspace *curproc_getas(void);
 struct addrspace *curproc_setas(struct addrspace *);
 
 
-#endif /* _PROC_H_ */
+#endif /* _exitPROC_H_ */
