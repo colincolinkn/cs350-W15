@@ -86,8 +86,10 @@ struct proc_combo {
        struct proc *proc;
        int exit_code;
        struct semaphore *proc_sem;
+       int pid;
 };
-extern volatile struct proc_combo p_table[PID_MAX];
+//extern volatile struct array *p_table;
+extern volatile struct proc_combo *p_table;
 #endif /* OPT_A2 */
 
 /* This is the process structure for the kernel and for kernel-only threads. */

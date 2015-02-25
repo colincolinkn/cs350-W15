@@ -50,13 +50,15 @@
 #include <vfs.h>
 #include <synch.h>
 #include <kern/fcntl.h>  
-
+#include <limits.h>
+#include <array.h>
 /*
  * The process for the kernel; this holds all the kernel-only threads.
  */
 struct proc *kproc;
 #if OPT_A2
-volatile struct proc_combo p_table[PID_MAX];
+//volatile struct array *p_table;
+volatile struct proc_combo *p_table;
 #endif
 #ifdef UW
 /* count of the number of processes, excluding kproc */
@@ -88,11 +90,13 @@ proc_create(const char *name)
 		kfree(proc);
 		return NULL;
 	}
+        #if OPT_A2
         proc->children = array_create();
         if (proc->children == NULL) {
                 kfree(proc);
                 return NULL;
         }
+        #endif /* OPT_A2 */
 	threadarray_init(&proc->p_threads);
 	spinlock_init(&proc->p_lock);
 
@@ -123,7 +127,13 @@ proc_destroy(struct proc *proc)
          * be defined because the calling thread may have already detached itself
          * from the process.
 	 */
-
+        #if OPT_A2
+        int err =  array_setsize(proc->children, 0);
+        if (err) {
+           panic("Cannot reset array size");
+        }
+	array_destroy(proc->children);
+	#endif
 	KASSERT(proc != NULL);
 	KASSERT(proc != kproc);
 
@@ -202,10 +212,15 @@ proc_bootstrap(void)
   }
 #ifdef UW
   #if OPT_A2
-  for (int i = 0; i < PID_MAX; i++) {
+  //p_table = array_create();
+  p_table = kmalloc((PID_MAX + 1) * sizeof(struct proc_combo));
+  if (p_table == NULL) {
+    panic("cannot create pid table");
+  }
+  for (int i = 1; i <= PID_MAX; i++) {
     p_table[i].proc = NULL;
     p_table[i].exit_code = -1;
-    p_table[i].proc_sem = sem_create("proc_cv", 0);
+    //p_table[i].proc_sem = sem_create("sem", 0);
   }
   #endif /* OPT_A2 */
   proc_count = 0;
@@ -238,18 +253,20 @@ proc_create_runprogram(const char *name)
 	}
         
         #if OPT_A2
-        unsigned int p_rd = (unsigned int)random() % PID_MAX;
-        unsigned int p_ct = p_rd;
+        unsigned int p_rd = 1;
 	while(1) {
-	    if (p_table[p_ct].proc == NULL && p_table[p_ct].exit_code == -1) {
-		p_table[p_ct].proc = proc;
-                proc->pid = (pid_t)p_ct;
+            if (p_rd > (unsigned int)PID_MAX) { 
+	        panic("reached maximum pid\n");
+		 }
+	    if (p_table[p_rd].proc == NULL && p_table[p_rd].exit_code == -1) {
+		p_table[p_rd].proc = proc;
+                if (p_table[p_rd].proc_sem == NULL) {
+                    p_table[p_rd].proc_sem = sem_create("sem", 0);
+                }
+                proc->pid = p_rd;
 	    	break;
 	    }
-	    p_ct = (p_ct+1)%PID_MAX;
-            if (p_ct == p_rd) {
-	      panic("reached maximum pid\n");
-            }
+	    p_rd++;
 	} 
         proc->p_pid = -1;      
         #endif /* OPT_A2 */

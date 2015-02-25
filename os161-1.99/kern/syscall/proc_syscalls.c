@@ -12,6 +12,7 @@
 #include "opt-A2.h"
 #include <mips/trapframe.h>
 #include <synch.h>
+#include <array.h>
   /* this implementation of sys__exit does not do anything with the exit code */
   /* this needs to be fixed to get exit() and waitpid() working properly */
 
@@ -20,8 +21,7 @@ int sys_fork(struct trapframe* tf, pid_t *retval) {
    struct proc *new_proc;
    new_proc = proc_create_runprogram(curproc->p_name);
    if (new_proc == NULL) {
-     DEBUG(DB_SYSCALL,"Syscall: fork!!!!!!!%d\n", (int)tf);
-     DEBUG(DB_SYSCALL,"Syscall: fork2!!!!!!!%d\n", *retval);
+     panic("cannot create new process");
    }
    new_proc->p_pid = curproc->pid;
    int err;
@@ -68,9 +68,10 @@ void sys__exit(int exitcode) {
   #if OPT_A2
   if (p->p_pid < 0) {// no parent
     p_table[p->pid].proc = NULL;
-    p_table[p->pid].exit_code = _MKWAIT_EXIT(exitcode);
-    V(p_table[p->pid].proc_sem);
-  }
+  }  
+  p_table[p->pid].exit_code = _MKWAIT_EXIT(exitcode);
+  V(p_table[p->pid].proc_sem);
+  
   #endif /* OPT_A2 */ 
   DEBUG(DB_SYSCALL,"Syscall: _exit(%d)\n",exitcode);
 
@@ -137,12 +138,11 @@ sys_waitpid(pid_t pid,
     return(EINVAL);
   }
   #if OPT_A2
-  if (p_table[(int)pid].proc == NULL && p_table[(int)pid].exit_code == -1) {
+  if ((unsigned)pid > PID_MAX) {
     return ESRCH;
   }
-  int num_children = array_num(curproc->children);
-  if (num_children == 0) {
-    return ECHILD;
+  if ((int)array_num(curproc->children) == 0) {// no parent
+    return ESRCH;
   }
   int existence = 0;
   int i;
@@ -155,13 +155,15 @@ sys_waitpid(pid_t pid,
     return ECHILD;
   }
   array_remove(curproc->children, i);
-  P(p_table[(int)pid].proc_sem);
-  if(p_table[(int)pid].exit_code > -1) {
-    exitstatus =p_table[(int)pid].exit_code;
-    p_table[(int)pid].exit_code = -1;
+  
+  P(p_table[pid].proc_sem);
+  if(p_table[pid].exit_code > -1) {
+    exitstatus =p_table[pid].exit_code;
+    p_table[pid].exit_code = -1;
   } else {
     exitstatus = 0;
   }
+  
   #else
   /* for now, just pretend the exitstatus is 0 */
   exitstatus = 0;
