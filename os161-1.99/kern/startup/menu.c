@@ -45,7 +45,7 @@
 #include "opt-synchprobs.h"
 #include "opt-sfs.h"
 #include "opt-net.h"
-
+#include "opt-A2.h"
 /*
  * In-kernel menu and command dispatcher.
  */
@@ -101,8 +101,11 @@ cmd_progthread(void *ptr, unsigned long nargs)
 	KASSERT(strlen(args[0]) < sizeof(progname));
 
 	strcpy(progname, args[0]);
-
+        #if OPT_A2
+        result = runprogram(progname, nargs, args);
+        #else 
 	result = runprogram(progname);
+        #endif /* OPT_A2 */
 	if (result) {
 		kprintf("Running program %s failed: %s\n", args[0],
 			strerror(result));
