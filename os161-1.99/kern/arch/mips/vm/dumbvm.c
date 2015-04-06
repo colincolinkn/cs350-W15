@@ -230,17 +230,10 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	KASSERT((as->as_stackpbase & PAGE_FRAME) == as->as_stackpbase);
 	#endif /* OPT_A3 */
 	
-	#if OPT_A3
-	vbase1 = as->as_vbase1[0];
-        vtop1 = vbase1 + as->as_npages1 * PAGE_SIZE;
-        vbase2 = as->as_vbase2[0];
-        vtop2 = vbase2 + as->as_npages2 * PAGE_SIZE;
-	#else
 	vbase1 = as->as_vbase1;
 	vtop1 = vbase1 + as->as_npages1 * PAGE_SIZE;
 	vbase2 = as->as_vbase2;
 	vtop2 = vbase2 + as->as_npages2 * PAGE_SIZE;
-	#endif /* OPT_A3 */
 	stackbase = USERSTACK - DUMBVM_STACKPAGES * PAGE_SIZE;
 	stacktop = USERSTACK;
 
@@ -321,10 +314,10 @@ as_create(void)
 		return NULL;
 	}
 	#if OPT_A3
-	as->as_vbase1 = NULL;
+	as->as_vbase1 = 0;
 	as->as_pbase1 = NULL;
 	as->as_npages1 = 0;
-	as->as_vbase2 = NULL;
+	as->as_vbase2 = 0;
         as->as_pbase2 = NULL;
 	as->as_npages2 = 0;
 	as->as_stackpbase = NULL;	
@@ -355,9 +348,7 @@ as_destroy(struct addrspace *as)
 	for (int i = 0; i< DUMBVM_STACKPAGES; i++) {
 		free_kpages(PADDR_TO_KVADDR(as->as_stackpbase[i]));
 	}
-	kfree(as->as_vbase1);
 	kfree(as->as_pbase1);
-kfree(as->as_vbase2);
 kfree(as->as_pbase2);
 kfree(as->as_stackpbase);
 	#endif
@@ -414,39 +405,16 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	(void)writeable;
 	(void)executable;
 
-	#if OPT_A3
-	if (as->as_vbase1 == NULL) {
-                as->as_npages1 = npages;
-		as->as_vbase1 = kmalloc(npages*sizeof(vaddr_t));
-		for (int i = 0; i < (int)npages; i++) {
-			as->as_vbase1[i] = vaddr + i * PAGE_SIZE;
-		}
-                return 0;
-        }
-	#else
 	if (as->as_vbase1 == 0) {
 		as->as_vbase1 = vaddr;
 		as->as_npages1 = npages;
 		return 0;
 	}
-	#endif /* OPT_A3 */
-	
-	#if OPT_A3
-        if (as->as_vbase2 == NULL) {
-                as->as_npages2 = npages;
-                as->as_vbase2 = kmalloc(npages*sizeof(vaddr_t));
-                for (int i = 0; i < (int)npages; i++) {
-                        as->as_vbase2[i] = vaddr + i * PAGE_SIZE;
-                }
-                return 0;
-        }
-        #else
 	if (as->as_vbase2 == 0) {
 		as->as_vbase2 = vaddr;
 		as->as_npages2 = npages;
 		return 0;
 	}
-	#endif /* OPT_A3 */
 
 	/*
 	 * Support for more than two regions is not available.
@@ -554,29 +522,10 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		return ENOMEM;
 	}	
 	
-	#if OPT_A3
-	new->as_npages1 = old->as_npages1;
-	new->as_vbase1 = kmalloc(new->as_npages1 * sizeof(vaddr_t));
-	for (int i = 0; i < (int)new->as_npages1; i++) {
-		new->as_vbase1[i] = old->as_vbase1[i];
-	}
-
-	new->as_npages2 = old->as_npages2;
-        new->as_vbase2 = kmalloc(new->as_npages2 * sizeof(vaddr_t));
-        for (int i = 0; i < (int)new->as_npages2; i++) {
-                new->as_vbase2[i] = old->as_vbase2[i];
-        }
-
-        new->as_stackpbase = kmalloc(DUMBVM_STACKPAGES * sizeof(vaddr_t));
-        for (int i = 0; i < (int)DUMBVM_STACKPAGES; i++) {
-                new->as_stackpbase[i] = old->as_stackpbase[i];
-        }
-	#else
 	new->as_vbase1 = old->as_vbase1;
 	new->as_npages1 = old->as_npages1;
 	new->as_vbase2 = old->as_vbase2;
 	new->as_npages2 = old->as_npages2;
-	#endif
 	/* (Mis)use as_prepare_load to allocate some physical memory. */
 	if (as_prepare_load(new)) {
 		as_destroy(new);
