@@ -46,8 +46,20 @@
  */
 
 /* under dumbvm, always have 48k of user stack */
-#define DUMBVM_STACKPAGES    12
-
+#define DUMBVM_STACKPAGES    1
+#if OPT_A3
+#define PAGE_SIZE 4096
+paddr_t lo;
+paddr_t hi;
+int table_size = 0;
+bool stealMem = 1;
+struct CoreEntry {
+	paddr_t cm_addr;
+	int cm_blocks;
+	bool cm_valid;
+};
+struct CoreEntry* core_map;
+#endif /* OPT_A3 */
 /*
  * Wrap rma_stealmem in a spinlock.
  */
@@ -56,6 +68,26 @@ static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
 void
 vm_bootstrap(void)
 {
+	#if OPT_A3 
+	ram_getsize(&lo, &hi);
+	table_size = (hi - lo)/PAGE_SIZE;
+	int offset = (hi - lo)%PAGE_SIZE;
+	lo += offset;
+	if (hi - lo < table_size * sizeof(struct CoreEntry)) {
+		panic("No memory for core map");
+	}
+	core_map = (struct CoreEntry *)PADDR_TO_KVADDR(lo);
+	for (int i = 0; i < table_size; i++) {
+		if ((unsigned)i*PAGE_SIZE>=(unsigned)table_size * sizeof(struct CoreEntry)) {
+			core_map[i].cm_valid = 1;
+		} else {
+			core_map[i].cm_valid = 0;
+		}
+		core_map[i].cm_addr = lo + i * PAGE_SIZE;
+		core_map[i].cm_blocks = 0;
+	}
+	stealMem = 0;
+	#endif /* OPT_A3 */
 	/* Do nothing. */
 }
 
@@ -66,9 +98,32 @@ getppages(unsigned long npages)
 	paddr_t addr;
 
 	spinlock_acquire(&stealmem_lock);
-
+	#if OPT_A3
+	if (stealMem) {
+		addr = ram_stealmem(npages);
+	} else {
+		int page_count = 0;
+		for (int i = 0; i < table_size; i++) {
+			if (core_map[i].cm_valid) {
+				page_count++;
+				if (page_count == (int)npages) {
+					for (int j = 0;j < (int)npages; j++) {
+						core_map[i-(int)j].cm_valid = 0;
+					}
+					core_map[i+1-npages].cm_blocks = npages;
+					addr = core_map[i+1-npages].cm_addr;
+					break;
+				} 
+			} else {
+				page_count = 0;
+			}
+		} if (!page_count) {
+			return ENOMEM;
+		}
+	}
+	#else
 	addr = ram_stealmem(npages);
-	
+	#endif /* OPT_A3 */
 	spinlock_release(&stealmem_lock);
 	return addr;
 }
@@ -89,7 +144,14 @@ void
 free_kpages(vaddr_t addr)
 {
 	/* nothing - leak the memory. */
-
+	#if OPT_A3
+	int paddr = KVADDR_TO_PADDR(addr);
+	int idx = (paddr-lo)/PAGE_SIZE;
+	int npages = core_map[idx].cm_blocks;
+	for (int i = 0; i < npages; i++) {
+		core_map[i+idx].cm_valid = 1;
+	}
+	#endif /* OPT_A3*/
 	(void)addr;
 }
 
@@ -251,6 +313,9 @@ as_create(void)
 void
 as_destroy(struct addrspace *as)
 {
+	free_kpages(PADDR_TO_KVADDR(as->as_pbase1));
+	free_kpages(PADDR_TO_KVADDR(as->as_pbase2));
+	free_kpages(PADDR_TO_KVADDR(as->as_stackpbase));
 	kfree(as);
 }
 
